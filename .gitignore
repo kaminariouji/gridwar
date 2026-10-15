@@ -1,0 +1,4 @@
+node_modules/
+.wrangler/
+.playwright-cli/
+test-e2e.mjs

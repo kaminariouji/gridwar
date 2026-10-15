@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GRIDWAR — turn-based strategy for humans & agents</title>
+<style>
+  :root {
+    --bg: #0b0f17; --panel: #121826; --panel2: #0e1420; --line: #232d42;
+    --text: #e6ecf5; --muted: #8b98ad; --accent: #22d3ee;
+    --s0: #22d3ee; --s1: #fb7185; --s2: #ffb800; --s3: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  }
+  a { color: var(--accent); }
+  .wrap { width: 100%; max-width: 780px; padding: 28px 20px 60px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  h1 { font-size: 26px; letter-spacing: 4px; font-weight: 800; }
+  h1 span { color: var(--accent); }
+  .tag { color: var(--muted); font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 18px; }
+  .panel h2 { font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text] {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+    color: var(--text); padding: 11px 13px; font: inherit; outline: none; flex: 1; min-width: 0;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
+  input.code { text-transform: uppercase; letter-spacing: 6px; font-weight: 700; }
+  button {
+    background: var(--accent); color: #04222a; border: 0; border-radius: 9px;
+    padding: 11px 18px; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .err { color: #fb7185; font-size: 13px; min-height: 18px; margin-top: 8px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 700; border: 1px solid var(--line); }
+  .code-box { font-size: 30px; font-weight: 800; letter-spacing: 10px; color: var(--accent); }
+  /* lobby player list */
+  .plist { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+  .pitem { display: flex; align-items: center; gap: 10px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; }
+  .dot { width: 13px; height: 13px; border-radius: 4px; flex: none; }
+  .pitem .name { flex: 1; font-weight: 600; }
+  .pitem .tagbot { color: var(--muted); font-size: 12px; }
+  /* board */
+  .boardwrap { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
+  #board {
+    display: grid; grid-template-columns: repeat(9, 44px); grid-template-rows: repeat(9, 44px);
+    gap: 4px; padding: 10px; background: var(--panel2); border: 1px solid var(--line); border-radius: 14px;
+  }
+  .cell {
+    border-radius: 8px; background: #182031; border: 1px solid #1f2940;
+    display: flex; align-items: center; justify-content: center; position: relative;
+    cursor: default; transition: transform .06s ease, box-shadow .06s ease;
+  }
+  .cell .pips { display: flex; gap: 3px; }
+  .cell .pips i { width: 5px; height: 5px; border-radius: 50%; background: #2c3850; }
+  .cell.owned .pips i { background: rgba(0,0,0,.35); }
+  .cell.legal { cursor: pointer; outline: 2px solid var(--accent); outline-offset: -2px; animation: pulse 1.2s infinite; }
+  .cell.legal.strike { outline-color: #fb7185; }
+  .cell.legal.fortify { outline-color: #ffd166; }
+  .cell:hover.legal { transform: scale(1.07); z-index: 2; }
+  .cell.fortified::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 6px;
+    border: 2px dashed rgba(255,255,255,.75); pointer-events: none;
+  }
+  .cell.immune { outline: 1px dashed rgba(255,255,255,.45); outline-offset: -3px; }
+  @keyframes pulse { 50% { box-shadow: 0 0 12px rgba(34,211,238,.55); } }
+  .side { flex: 1; min-width: 230px; display: flex; flex-direction: column; gap: 12px; }
+  .score { display: flex; align-items: center; gap: 9px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  .score.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .score .name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score .val { font-weight: 800; font-variant-numeric: tabular-nums; }
+  .timer { font-size: 34px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+  .timer small { display: block; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 2px; }
+  .turnbar { text-align: center; font-weight: 700; }
+  .turnbar .you { color: var(--accent); }
+  .winner { text-align: center; font-size: 22px; font-weight: 800; margin-bottom: 10px; }
+  .legend { margin-top: 14px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+  .legend b { color: var(--text); }
+  .hide { display: none !important; }
+  footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; text-align: center; line-height: 1.7; }
+  @media (max-width: 560px) {
+    #board { grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(9, minmax(0, 1fr)); width: 100%; }
+    #board .cell { aspect-ratio: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>GRID<span>WAR</span></h1>
+    <div class="tag">turn-based strategy — humans &amp; AI agents in the same match</div>
+  </header>
+
+  <!-- ============ LANDING ============ -->
+  <section id="landing">
+    <div class="panel">
+      <h2>Create a match</h2>
+      <div class="row">
+        <label class="muted">Players:</label>
+        <select id="numPlayers" class="muted" style="background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:11px 13px;font:inherit;">
+          <option value="2" selected>2</option><option value="3">3</option><option value="4">4</option>
+        </select>
+        <input type="text" id="hostName" placeholder="Your name (optional)" maxlength="24" style="max-width:220px" />
+        <button id="btnCreate">Create match</button>
+      </div>
+      <div class="muted" style="margin-top:10px">You'll get a 6-letter code. Share it, or add bot players and start instantly.</div>
+    </div>
+    <div class="panel">
+      <h2>Join a match</h2>
+      <div class="row">
+        <input type="text" id="joinCode" class="code" placeholder="CODE" maxlength="6" />
+        <input type="text" id="joinName" placeholder="Your name (optional)" maxlength="24" style="max-width:220px" />
+        <button id="btnJoin" class="ghost">Join</button>
+      </div>
+      <div class="err" id="landingErr"></div>
+    </div>
+    <div class="panel">
+      <h2>Play as an AI agent</h2>
+      <div class="muted">
+        Agents play over plain HTTP/JSON — no browser needed. Create a match, then use the API:
+      </div>
+      <pre class="muted" style="margin-top:10px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; overflow:auto; font-size:12.5px">curl -X POST {origin}/api/matches -d '{"players":2}'      # → matchId
+curl -X POST {origin}/api/matches/CODE/join -d '{"name":"MyBot"}'   # → token
+curl -X POST {origin}/api/matches/CODE/move \
+  -d '{"token":"...","move":{"type":"expand","cell":40}}'
+curl '{origin}/api/matches/CODE/state?token=...'          # legalMoves included</pre>
+      <div class="muted" style="margin-top:10px">Full docs: <a href="/README.md" target="_blank">README</a> · sample bot: <a href="/bot.mjs" download>bot.mjs</a></div>
+    </div>
+  </section>
+
+  <!-- ============ MATCH ============ -->
+  <section id="match" class="hide">
+    <div class="panel" id="lobbyPanel">
+      <h2>Lobby — waiting for players</h2>
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="muted">Match code — share it with a friend or an agent</div>
+          <div class="code-box" id="lobbyCode">------</div>
+        </div>
+        <div class="row" style="align-items:flex-end">
+          <button id="btnCopy" class="ghost">Copy link</button>
+        </div>
+      </div>
+      <div class="plist" id="playerList"></div>
+      <div class="row">
+        <button id="btnAddBot" class="ghost">Add bot</button>
+        <button id="btnStart">Start match</button>
+      </div>
+      <div class="err" id="lobbyErr"></div>
+      <div class="muted" style="margin-top:10px" id="lobbyHint">2–4 players. A bot plays instantly so you can start with just you + one bot.</div>
+    </div>
+
+    <div class="panel" id="playPanel">
+      <div class="row" style="justify-content:space-between; margin-bottom:14px">
+        <div class="turnbar" id="turnBar">…</div>
+        <div class="pill" id="matchCodePill">------</div>
+      </div>
+      <div class="boardwrap">
+        <div id="board"></div>
+        <div class="side">
+          <div class="timer" id="timer">30<small>SECONDS</small></div>
+          <div id="scores"></div>
+          <div class="muted" id="hint"></div>
+        </div>
+      </div>
+      <div class="legend">
+        <b>How to win:</b> claim cells — they score their ring value (center <b>3</b>, next ring <b>2</b>, edge <b>1</b>).
+        Claim any cell next to your territory. <b>Strike</b> (red) steals an enemy cell when you flank it with ≥2 of your cells —
+        but a freshly captured cell is <b>immune for one round</b> (dashed outline).
+        <b>Fortify</b> (yellow, 2 per game) shields one of your cells from strikes. Highest score when the board fills wins.
+      </div>
+    </div>
+
+    <div class="panel" id="donePanel">
+      <div class="winner" id="winnerText">…</div>
+      <div id="finalScores"></div>
+      <div class="row" style="justify-content:center; margin-top:16px">
+        <button onclick="location.href='/'">New match</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    GRIDWAR — a tiny multiplayer strategy game for humans and AI agents.
+    One Cloudflare Worker, one Durable Object per match, no accounts, no database.
+  </footer>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const COLORS = ["var(--s0)", "var(--s1)", "var(--s2)", "var(--s3)"];
+const RAW = ["#22d3ee", "#fb7185", "#ffb800", "#a78bfa"];
+const state = { code: null, token: null, seat: null, last: null, timer: null, polling: null };
+
+function api(path, opts) {
+  return fetch(`/api/matches/${state.code}${path}`, opts).then(async (r) => {
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `http_${r.status}`);
+    return j;
+  });
+}
+function post(path, body) {
+  return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+}
+
+// ---------- routing ----------
+function currentCode() {
+  const m = location.pathname.match(/^\/m\/([A-Za-z0-9]{4,8})$/);
+  return m ? m[1].toUpperCase() : null;
+}
+function boot() {
+  const code = currentCode();
+  if (code) { enterMatch(code); } else { show("landing"); }
+}
+function show(which) {
+  for (const id of ["landing", "lobbyPanel", "playPanel", "donePanel"]) $(id).classList.add("hide");
+  if (which === "landing") $("landing").classList.remove("hide");
+  if (which === "lobby") { $("match").classList.remove("hide"); $("lobbyPanel").classList.remove("hide"); }
+  if (which === "play") { $("match").classList.remove("hide"); $("playPanel").classList.remove("hide"); }
+  if (which === "done") { $("match").classList.remove("hide"); $("donePanel").classList.remove("hide"); }
+}
+
+// ---------- landing actions ----------
+$("btnCreate").onclick = async () => {
+  $("landingErr").textContent = "";
+  try {
+    const players = parseInt($("numPlayers").value);
+    const r = await fetch("/api/matches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ players }) });
+    const j = await r.json();
+    if (!j.matchId) throw new Error(j.error || "create_failed");
+    const name = $("hostName").value.trim();
+    const join = await fetch(`/api/matches/${j.matchId}/join`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+    const jj = await join.json();
+    if (!jj.token) throw new Error(jj.error || "join_failed");
+    localStorage.setItem("gridwar_" + j.matchId, JSON.stringify({ token: jj.token, seat: jj.seat }));
+    location.href = `/m/${j.matchId}`;
+  } catch (e) { $("landingErr").textContent = "Could not create match: " + e.message; }
+};
+$("btnJoin").onclick = () => {
+  const code = $("joinCode").value.trim().toUpperCase();
+  if (code.length < 4) { $("landingErr").textContent = "Enter the 6-letter match code."; return; }
+  location.href = `/m/${code}?join=1`;
+};
+$("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnJoin").click(); });
+
+// ---------- match ----------
+async function enterMatch(code) {
+  state.code = code;
+  $("lobbyCode").textContent = code;
+  $("matchCodePill").textContent = code;
+  const saved = localStorage.getItem("gridwar_" + code);
+  if (saved) { try { const s = JSON.parse(saved); state.token = s.token; state.seat = s.seat; } catch {} }
+  const wantJoin = new URLSearchParams(location.search).get("join") === "1";
+  if (!state.token || wantJoin) {
+    const name = (new URLSearchParams(location.search).get("name") || "").trim();
+    try {
+      const j = await post("/join", { name });
+      state.token = j.token; state.seat = j.seat;
+      localStorage.setItem("gridwar_" + code, JSON.stringify({ token: j.token, seat: j.seat }));
+      history.replaceState(null, "", `/m/${code}`);
+    } catch (e) {
+      if (e.message === "already_started") {
+        // match already running: spectate without a seat
+        state.token = null; state.seat = null;
+      } else {
+        $("landingErr").textContent = "Join failed: " + e.message;
+        location.href = "/"; return;
+      }
+    }
+  }
+  await refresh();
+  state.polling = setInterval(refresh, 1500);
+}
+
+async function refresh() {
+  if (!state.code) return;
+  try {
+    const q = state.token ? `?token=${encodeURIComponent(state.token)}` : "";
+    const s = await api(`/state${q}`);
+    state.last = s;
+    render(s);
+  } catch (e) { /* transient — keep polling */ }
+}
+
+function render(s) {
+  if (s.phase === "lobby") { renderLobby(s); show("lobby"); }
+  else if (s.phase === "playing") { renderPlay(s); show("play"); }
+  else { renderDone(s); show("done"); }
+}
+
+function renderLobby(s) {
+  const list = $("playerList");
+  list.innerHTML = "";
+  s.players.forEach((p) => {
+    const el = document.createElement("div");
+    el.className = "pitem";
+    if (p.open) {
+      el.style.opacity = ".55";
+      el.innerHTML = `<span class="dot" style="background:#2c3850"></span>
+        <span class="name" style="font-weight:400;color:var(--muted)">Waiting for a player…</span>
+        <span class="tagbot">OPEN</span>`;
+    } else {
+      el.innerHTML = `<span class="dot" style="background:${RAW[p.seat]}"></span>
+        <span class="name">${esc(p.name)}${p.seat === state.seat ? " (you)" : ""}</span>
+        <span class="tagbot">${p.isBot ? "BOT" : "HUMAN"}</span>`;
+    }
+    list.appendChild(el);
+  });
+  const openSeats = s.players.filter((p) => p.open).length;
+  $("btnStart").disabled = openSeats > 0 || s.players.length < 2;
+  $("btnAddBot").disabled = openSeats === 0;
+  $("lobbyHint").textContent = openSeats > 0
+    ? `Fill ${openSeats} more seat${openSeats > 1 ? "s" : ""} — share the code, or add bots — to start.`
+    : "All seats filled. Ready to start!";
+}
+
+function renderPlay(s) {
+  const board = $("board");
+  board.innerHTML = "";
+  const legal = new Map();
+  (s.legalMoves || []).forEach((m) => {
+    const prev = legal.get(m.cell);
+    if (!prev || m.type === "strike") legal.set(m.cell, m); // strike outranks expand visually
+  });
+  const myTurn = s.turn === s.yourSeat && s.phase === "playing";
+  for (let i = 0; i < s.size * s.size; i++) {
+    const cell = s.board[i];
+    const el = document.createElement("div");
+    el.className = "cell";
+    const val = ringValue(i);
+    if (cell) {
+      el.classList.add("owned");
+      el.style.background = RAW[cell.owner];
+      el.style.borderColor = "rgba(0,0,0,.25)";
+      if (cell.fortified) el.classList.add("fortified");
+      if (cell.immune) { el.classList.add("immune"); el.title = "immune — freshly captured"; }
+    }
+    const pips = document.createElement("span");
+    pips.className = "pips";
+    pips.innerHTML = "<i></i>".repeat(val);
+    el.appendChild(pips);
+    if (myTurn && legal.has(i)) {
+      const mv = legal.get(i);
+      el.classList.add("legal", mv.type);
+      el.title = mv.type + " (value " + mv.value + ")";
+      el.onclick = () => doMove(mv);
+    }
+    board.appendChild(el);
+  }
+  // turn bar
+  const cur = s.players[s.turn];
+  const you = s.turn === s.yourSeat;
+  $("turnBar").innerHTML = you
+    ? `<span class="you">Your turn</span> — play a highlighted cell`
+    : `${esc(cur.name)}${cur.isBot ? " (bot)" : ""} is thinking…`;
+  // scores
+  const sc = $("scores");
+  sc.innerHTML = "";
+  s.players.forEach((p) => {
+    const el = document.createElement("div");
+    el.className = "score" + (p.seat === s.turn ? " active" : "");
+    el.innerHTML = `<span class="dot" style="background:${RAW[p.seat]}"></span>
+      <span class="name">${esc(p.name)}${p.seat === s.yourSeat ? " (you)" : ""}</span>
+      <span class="muted" title="fortify charges left">🛡 ${p.fortify}</span>
+      <span class="val">${s.scores[p.seat]}</span>`;
+    sc.appendChild(el);
+  });
+  $("hint").textContent = myTurn
+    ? "Click a highlighted cell. Red = strike (steal), yellow = fortify (shield), cyan = expand."
+    : "Waiting for other players… the board refreshes automatically.";
+  startTimer(s);
+}
+
+function renderDone(s) {
+  stopTimer();
+  const w = s.winner;
+  $("winnerText").innerHTML = w === null
+    ? "Draw — no winner."
+    : `<span style="color:${RAW[w]}">${esc(s.players[w].name)}</span> wins! 🏆`;
+  const fs = $("finalScores");
+  fs.innerHTML = "";
+  s.players
+    .map((p, i) => ({ p, score: (s.finalScores || s.scores)[i] }))
+    .sort((a, b) => b.score - a.score)
+    .forEach(({ p, score }) => {
+      const el = document.createElement("div");
+      el.className = "score";
+      el.innerHTML = `<span class="dot" style="background:${RAW[p.seat]}"></span>
+        <span class="name">${esc(p.name)}${p.seat === s.yourSeat ? " (you)" : ""}</span>
+        <span class="val">${score}</span>`;
+      fs.appendChild(el);
+    });
+}
+
+function ringValue(i) {
+  const r = Math.floor(i / 9), c = i % 9;
+  const ring = Math.max(Math.abs(r - 4), Math.abs(c - 4));
+  return ring <= 1 ? 3 : ring <= 2 ? 2 : 1;
+}
+
+async function doMove(mv) {
+  if (state.busy) return;
+  state.busy = true;
+  try {
+    const j = await post("/move", { token: state.token, move: { type: mv.type, cell: mv.cell } });
+    state.last = j.state;
+    render(j.state);
+  } catch (e) {
+    await refresh();
+  } finally { state.busy = false; }
+}
+
+$("btnAddBot").onclick = async () => {
+  const n = state.last ? state.last.players.filter((p) => p.isBot).length + 1 : 1;
+  try { const j = await post("/bot", { name: "Bot " + n }); render(j.state); }
+  catch (e) { $("lobbyErr").textContent = e.message; }
+};
+$("btnStart").onclick = async () => {
+  try { const j = await post("/start", {}); state.last = j.state; render(j.state); }
+  catch (e) { $("lobbyErr").textContent = e.message; }
+};
+$("btnCopy").onclick = async () => {
+  const url = location.origin + "/m/" + state.code;
+  try { await navigator.clipboard.writeText(url); $("btnCopy").textContent = "Copied!"; setTimeout(() => ($("btnCopy").textContent = "Copy link"), 1500); }
+  catch { prompt("Copy this link:", url); }
+};
+
+// ---------- timer ----------
+function startTimer(s) {
+  stopTimer();
+  if (!s.deadline) { $("timer").textContent = "—"; return; }
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000));
+    $("timer").innerHTML = `${left}<small>SECONDS</small>`;
+  };
+  tick();
+  state.timer = setInterval(tick, 250);
+}
+function stopTimer() { if (state.timer) { clearInterval(state.timer); state.timer = null; } }
+
+function esc(x) { return String(x == null ? "" : x).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])); }
+
+boot();
+</script>
+</body>
+</html>
