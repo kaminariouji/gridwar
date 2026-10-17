@@ -84,6 +84,8 @@
   .winner { text-align: center; font-size: 22px; font-weight: 800; margin-bottom: 10px; }
   .legend { margin-top: 14px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
   .legend b { color: var(--text); }
+  .rules { margin-top: 14px; font-size: 13px; color: var(--muted); line-height: 1.75; border-top: 1px solid var(--line); padding-top: 13px; }
+  .rules b { color: var(--text); }
   .hide { display: none !important; }
   footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; text-align: center; line-height: 1.7; }
   @media (max-width: 560px) {
@@ -101,6 +103,19 @@
 
   <!-- ============ LANDING ============ -->
   <section id="landing">
+    <div class="panel" style="border-color:#1d4b57">
+      <h2>Play now</h2>
+      <div class="row" style="justify-content:space-between">
+        <div class="muted" style="max-width:430px">One click: you versus a bot. No account, no install, about three minutes.</div>
+        <button id="btnQuick">Play vs bot &rarr;</button>
+      </div>
+      <div class="rules">
+        <b>Rules.</b> Claim cells next to your territory. Each cell scores its ring value — center <b>3</b>, next ring <b>2</b>, edge <b>1</b>.
+        <b>Strike</b> (red) steals an enemy cell when you flank it with at least two of your cells, but a freshly captured cell is
+        <b>immune for one round</b>. <b>Fortify</b> (yellow, 2 per game) shields one of your cells from strikes.
+        Highest score when the board fills wins.
+      </div>
+    </div>
     <div class="panel">
       <h2>Create a match</h2>
       <div class="row">
@@ -230,6 +245,29 @@ function show(which) {
 }
 
 // ---------- landing actions ----------
+$("btnQuick").onclick = async () => {
+  $("landingErr").textContent = "";
+  const btn = $("btnQuick");
+  btn.disabled = true; btn.textContent = "Starting…";
+  try {
+    const name = $("hostName").value.trim();
+    const r = await fetch("/api/matches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ players: 2 }) });
+    const j = await r.json();
+    if (!j.matchId) throw new Error(j.error || "create_failed");
+    const join = await fetch(`/api/matches/${j.matchId}/join`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+    const jj = await join.json();
+    if (!jj.token) throw new Error(jj.error || "join_failed");
+    localStorage.setItem("gridwar_" + j.matchId, JSON.stringify({ token: jj.token, seat: jj.seat }));
+    const bot = await fetch(`/api/matches/${j.matchId}/bot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ seat: 1 }) });
+    if (!bot.ok) throw new Error("could not seat a bot");
+    const start = await fetch(`/api/matches/${j.matchId}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    if (!start.ok) throw new Error("could not start the match");
+    location.href = `/m/${j.matchId}`;
+  } catch (e) {
+    $("landingErr").textContent = "Could not start a game: " + e.message;
+    btn.disabled = false; btn.textContent = "Play vs bot →";
+  }
+};
 $("btnCreate").onclick = async () => {
   $("landingErr").textContent = "";
   try {
